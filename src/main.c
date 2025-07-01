@@ -5,13 +5,13 @@
 struct termios orig_termios;
 
 void disable_raw_mode(void) {
-
+    tcsetattr(STDIN_FILENO, TCSAFLUSH, &orig_termios);
 } 
 
 void enable_raw_mode(void) {
-    struct termios raw;
+    tcgetattr(STDIN_FILENO, &orig_termios);
 
-    tcgetattr(STDIN_FILENO, &raw);
+    struct termios raw = orig_termios;
 
     raw.c_lflag &= ~(ECHO);
 
