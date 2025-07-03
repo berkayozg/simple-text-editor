@@ -9,6 +9,7 @@
 #include <termios.h>
 
 /*** defines ***/
+#define EDITOR_VERSION "0.0.1"
 #define CTRL_KEY(k) ((k) & 0x1f)
 #define ABUF_INIT {NULL, 0}
 /*** data ***/
@@ -133,8 +134,27 @@ void abuf_free (struct abuf *ab) {
 /*** output ***/
 void editor_draw_rows (struct abuf *ab) {
     for (int i = 0; i < E.screen_rows; i++) {
-       abuf_append(ab, "~", 1);
+        if (i == E.screen_rows / 3) {
+            char welcome[80];
+            int welcome_len = snprintf(welcome, sizeof(welcome), 
+                "Text editor -- version %s", EDITOR_VERSION);
+            if (welcome_len > E.screen_cols) {
+                welcome_len = E.screen_cols;
+            }
+            int padding = (E.screen_cols - welcome_len) / 2;
+            if (padding) {
+                abuf_append(ab, "~", 1);
+                padding--;
+            }
+            while (padding--) {
+                abuf_append(ab, " ", 1);
+            }
+            abuf_append(ab, welcome, welcome_len);
+        } else {
+            abuf_append(ab, "~", 1);
+        }
 
+        abuf_append(ab, "\x1b[K", 3);
         if (i < E.screen_rows - 1) {
             abuf_append(ab, "\r\n", 2);
         }
@@ -144,11 +164,13 @@ void editor_draw_rows (struct abuf *ab) {
 void editor_refresh_screen (void) {
     struct abuf ab = ABUF_INIT;
     
-    abuf_append(&ab, "\x1b[2J", 4);
+    abuf_append(&ab, "\x1b[?25l", 6);
     abuf_append(&ab, "\x1b[H", 3);
     editor_draw_rows(&ab);
      
     abuf_append(&ab, "\x1b[H", 3);
+    abuf_append(&ab, "\x1b[?25l", 6);
+
     write (STDOUT_FILENO, ab.b, ab.len);
     abuf_free(&ab);
 }
