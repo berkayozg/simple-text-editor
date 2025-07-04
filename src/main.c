@@ -1,12 +1,12 @@
 /*** includes ***/
-#include <string.h>
-#include <sys/ioctl.h>
-#include <unistd.h>
-#include <errno.h>
 #include <ctype.h>
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+#include <sys/ioctl.h>
 #include <termios.h>
+#include <unistd.h>
 
 /*** defines ***/
 #define EDITOR_VERSION "0.0.1"
@@ -15,10 +15,14 @@
 
 enum EditorKey {
     ARROW_LEFT = 1000,
-    ARROW_RIGHT = 'd',
-    ARROW_UP = 'w',
-    ARROW_DOWN = 's',
-} 
+    ARROW_RIGHT,
+    ARROW_UP,
+    ARROW_DOWN,
+    HOME_KEY,
+    END_KEY,
+    PAGE_UP,
+    PAGE_DOWN
+};
 /*** data ***/
 struct editorConfig {
     int cursor_x, cursor_y;
@@ -35,9 +39,9 @@ struct abuf {
 struct editorConfig E;
 
 /*** terminal ***/
-void die (const char *s) {
-    write (STDOUT_FILENO, "\x1b[2J", 4);
-    write (STDOUT_FILENO, "\x1b[H", 3);
+void die(const char *s) {
+    write(STDOUT_FILENO, "\x1b[2J", 4);
+    write(STDOUT_FILENO, "\x1b[H", 3);
     perror(s);
     exit(1);
 }
@@ -46,9 +50,9 @@ void disable_raw_mode(void) {
     if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &E.orig_termios) == -1) {
         die("tcsetattr");
     }
-} 
+}
 
-void enable_raw_mode(void) { // Default mode is called 'Cooked' mode.
+void enable_raw_mode(void) {  // Default mode is called 'Cooked' mode.
     if (tcgetattr(STDIN_FILENO, &E.orig_termios) == -1) {
         die("tcgetattr");
     }
@@ -63,11 +67,11 @@ void enable_raw_mode(void) { // Default mode is called 'Cooked' mode.
     raw.c_cc[VTIME] = 1;
 
     if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw) == -1) {
-        die ("tcsetattr");
+        die("tcsetattr");
     }
 }
 
-int editor_read_key (void) {
+int editor_read_key(void) {
     int nread;
     char c;
 
@@ -82,17 +86,54 @@ int editor_read_key (void) {
 
         if (read(STDIN_FILENO, &seq[0], 1) != 1) {
             return '\x1b';
-        } 
+        }
         if (read(STDIN_FILENO, &seq[1], 1) != 1) {
             return '\x1b';
         }
 
         if (seq[0] == '[') {
+            if (seq[1] >= '0' && seq[1] <= '9') {
+                if (read(STDIN_FILENO, &seq[2], 1) != 1) {
+                    return '\x1b';
+                }
+                if (seq[2] == '~') {
+                    switch (seq[1]) {
+                        case '1':
+                            return HOME_KEY;
+                        case '4':
+                            return END_KEY;
+                        case '5':
+                            return PAGE_UP;
+                        case '6':
+                            return PAGE_DOWN;
+                        case '7':
+                            return HOME_KEY;
+                        case '8':
+                            return END_KEY;
+                    }
+                }
+            } else {
+                switch (seq[1]) {
+                    case 'A':
+                        return ARROW_UP;
+                    case 'B':
+                        return ARROW_DOWN;
+                    case 'C':
+                        return ARROW_RIGHT;
+                    case 'D':
+                        return ARROW_LEFT;
+                    case 'H':
+                        return HOME_KEY;
+                    case 'F':
+                        return END_KEY;
+                }
+            }
+        } else if (seq[0] == '0') {
             switch (seq[1]) {
-                case 'A': return ARROW_UP;
-                case 'B': return ARROW_DOWN;
-                case 'C': return ARROW_RIGHT;
-                case 'D': return ARROW_LEFT;
+                case 'H':
+                    return HOME_KEY;
+                case 'F':
+                    return END_KEY;
             }
         }
         return '\x1b';
@@ -101,7 +142,7 @@ int editor_read_key (void) {
     }
 }
 
-int get_cursor_position (int *rows, int *cols) {
+int get_cursor_position(int *rows, int *cols) {
     char buf[32];
     unsigned int i = 0;
     if (write(STDOUT_FILENO, "\x1b[6n", 4) != 4) {
@@ -129,7 +170,7 @@ int get_cursor_position (int *rows, int *cols) {
     return -1;
 }
 
-int get_window_size (int *rows, int *cols) {
+int get_window_size(int *rows, int *cols) {
     struct winsize ws;
 
     if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws) == -1 || ws.ws_col == 0) {
@@ -146,7 +187,7 @@ int get_window_size (int *rows, int *cols) {
 
 /*** append buffer ***/
 
-void abuf_append (struct abuf *ab, const char *s, int len) {
+void abuf_append(struct abuf *ab, const char *s, int len) {
     char *new = realloc(ab->b, ab->len + len);
 
     if (new == NULL) {
@@ -155,19 +196,19 @@ void abuf_append (struct abuf *ab, const char *s, int len) {
     memcpy(&new[ab->len], s, len);
     ab->b = new;
     ab->len += len;
-} 
+}
 
-void abuf_free (struct abuf *ab) {
+void abuf_free(struct abuf *ab) {
     free(ab->b);
 }
 
 /*** output ***/
-void editor_draw_rows (struct abuf *ab) {
+void editor_draw_rows(struct abuf *ab) {
     for (int i = 0; i < E.screen_rows; i++) {
         if (i == E.screen_rows / 3) {
             char welcome[80];
-            int welcome_len = snprintf(welcome, sizeof(welcome), 
-                "Text editor -- version %s", EDITOR_VERSION);
+            int welcome_len = snprintf(welcome, sizeof(welcome),
+                                       "Text editor -- version %s", EDITOR_VERSION);
             if (welcome_len > E.screen_cols) {
                 welcome_len = E.screen_cols;
             }
@@ -191,50 +232,65 @@ void editor_draw_rows (struct abuf *ab) {
     }
 }
 
-void editor_refresh_screen (void) {
+void editor_refresh_screen(void) {
     struct abuf ab = ABUF_INIT;
-    
+
     abuf_append(&ab, "\x1b[?25l", 6);
     abuf_append(&ab, "\x1b[H", 3);
     editor_draw_rows(&ab);
-     
+
     char buf[32];
     snprintf(buf, sizeof(buf), "\x1b[%d;%dH", E.cursor_y + 1, E.cursor_x + 1);
     abuf_append(&ab, buf, strlen(buf));
 
     abuf_append(&ab, "\x1b[?25h", 6);
 
-    write (STDOUT_FILENO, ab.b, ab.len);
+    write(STDOUT_FILENO, ab.b, ab.len);
     abuf_free(&ab);
 }
 
 /*** input ***/
-void editor_move_cursor (int key) {
+void editor_move_cursor(int key) {
     switch (key) {
         case ARROW_LEFT:
-            E.cursor_x--;
+            if (E.cursor_x != 0) {
+                E.cursor_x--;
+            }
             break;
         case ARROW_RIGHT:
-            E.cursor_x++;
+            if (E.cursor_x != E.screen_cols - 1) {
+                E.cursor_x++;
+            }
             break;
         case ARROW_UP:
-            E.cursor_y--;
+            if (E.cursor_y != 0) {
+                E.cursor_y--;
+            }
             break;
         case ARROW_DOWN:
-            E.cursor_y++;
+            if (E.cursor_y != E.screen_rows - 1) {
+                E.cursor_y++;
+            }
             break;
     }
 }
 
-void editor_process_keypress (void) {
+void editor_process_keypress(void) {
     int c = editor_read_key();
 
     switch (c) {
         case CTRL_KEY('d'):
-            write (STDOUT_FILENO, "\x1b[2J", 4);
-            write (STDOUT_FILENO, "\x1b[H", 3);
+            write(STDOUT_FILENO, "\x1b[2J", 4);
+            write(STDOUT_FILENO, "\x1b[H", 3);
             exit(0);
             break;
+        case PAGE_UP:
+        case PAGE_DOWN: {
+            int times = E.screen_rows;
+            while (times--) {
+                editor_move_cursor(c == PAGE_UP ? ARROW_UP : ARROW_DOWN);
+            }
+        } break;
         case ARROW_UP:
         case ARROW_DOWN:
         case ARROW_LEFT:
@@ -245,13 +301,13 @@ void editor_process_keypress (void) {
 }
 
 /*** init ***/
-void init_editor (void) {
+void init_editor(void) {
     E.cursor_x = 0;
     E.cursor_y = 0;
     if (get_window_size(&E.screen_rows, &E.screen_cols) == -1) {
         die("init");
     }
-} 
+}
 int main(void) {
     enable_raw_mode();
     init_editor();
