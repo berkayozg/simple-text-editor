@@ -12,8 +12,16 @@
 #define EDITOR_VERSION "0.0.1"
 #define CTRL_KEY(k) ((k) & 0x1f)
 #define ABUF_INIT {NULL, 0}
+
+enum EditorKey {
+    ARROW_LEFT = 1000,
+    ARROW_RIGHT = 'd',
+    ARROW_UP = 'w',
+    ARROW_DOWN = 's',
+} 
 /*** data ***/
 struct editorConfig {
+    int cursor_x, cursor_y;
     int screen_rows;
     int screen_cols;
     struct termios orig_termios;
@@ -59,7 +67,7 @@ void enable_raw_mode(void) { // Default mode is called 'Cooked' mode.
     }
 }
 
-char editor_read_key (void) {
+int editor_read_key (void) {
     int nread;
     char c;
 
@@ -68,7 +76,29 @@ char editor_read_key (void) {
             die("editor_read_key");
         }
     }
-    return c;
+
+    if (c == '\x1b') {
+        char seq[3];
+
+        if (read(STDIN_FILENO, &seq[0], 1) != 1) {
+            return '\x1b';
+        } 
+        if (read(STDIN_FILENO, &seq[1], 1) != 1) {
+            return '\x1b';
+        }
+
+        if (seq[0] == '[') {
+            switch (seq[1]) {
+                case 'A': return ARROW_UP;
+                case 'B': return ARROW_DOWN;
+                case 'C': return ARROW_RIGHT;
+                case 'D': return ARROW_LEFT;
+            }
+        }
+        return '\x1b';
+    } else {
+        return c;
+    }
 }
 
 int get_cursor_position (int *rows, int *cols) {
@@ -168,16 +198,36 @@ void editor_refresh_screen (void) {
     abuf_append(&ab, "\x1b[H", 3);
     editor_draw_rows(&ab);
      
-    abuf_append(&ab, "\x1b[H", 3);
-    abuf_append(&ab, "\x1b[?25l", 6);
+    char buf[32];
+    snprintf(buf, sizeof(buf), "\x1b[%d;%dH", E.cursor_y + 1, E.cursor_x + 1);
+    abuf_append(&ab, buf, strlen(buf));
+
+    abuf_append(&ab, "\x1b[?25h", 6);
 
     write (STDOUT_FILENO, ab.b, ab.len);
     abuf_free(&ab);
 }
 
 /*** input ***/
+void editor_move_cursor (int key) {
+    switch (key) {
+        case ARROW_LEFT:
+            E.cursor_x--;
+            break;
+        case ARROW_RIGHT:
+            E.cursor_x++;
+            break;
+        case ARROW_UP:
+            E.cursor_y--;
+            break;
+        case ARROW_DOWN:
+            E.cursor_y++;
+            break;
+    }
+}
+
 void editor_process_keypress (void) {
-    char c = editor_read_key();
+    int c = editor_read_key();
 
     switch (c) {
         case CTRL_KEY('d'):
@@ -185,11 +235,19 @@ void editor_process_keypress (void) {
             write (STDOUT_FILENO, "\x1b[H", 3);
             exit(0);
             break;
+        case ARROW_UP:
+        case ARROW_DOWN:
+        case ARROW_LEFT:
+        case ARROW_RIGHT:
+            editor_move_cursor(c);
+            break;
     }
 }
 
 /*** init ***/
 void init_editor (void) {
+    E.cursor_x = 0;
+    E.cursor_y = 0;
     if (get_window_size(&E.screen_rows, &E.screen_cols) == -1) {
         die("init");
     }
