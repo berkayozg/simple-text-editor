@@ -37,6 +37,7 @@ typedef struct e_row {
 
 struct editorConfig {
     int cursor_x, cursor_y;
+    int row_offset;
     int screen_rows;
     int screen_cols;
     int num_rows;
@@ -249,9 +250,20 @@ void abuf_free(struct abuf *ab) {
 }
 
 /*** output ***/
+
+void editor_scroll(void) {
+    if (E.cursor_y < E.row_offset) {
+        E.row_offset = E.cursor_y;
+    }
+    if (E.cursor_y >= E.row_offset + E.screen_rows) {
+        E.row_offset = E.cursor_y - E.screen_rows + 1;
+    }
+}
+
 void editor_draw_rows(struct abuf *ab) {
     for (int i = 0; i < E.screen_rows; i++) {
-        if (i >= E.num_rows) {
+        int file_row = i + E.row_offset;
+        if (file_row >= E.num_rows) {
             if (E.num_rows == 0 && i == E.screen_rows / 3) {
                 char welcome[80];
                 int welcome_len = snprintf(welcome, sizeof(welcome),
@@ -272,11 +284,11 @@ void editor_draw_rows(struct abuf *ab) {
                 abuf_append(ab, "~", 1);
             }
         } else {
-            int len = E.row[i].size;
+            int len = E.row[file_row].size;
             if (len > E.screen_cols) {
                 len = E.screen_cols;
             }
-            abuf_append(ab, E.row[i].chars, len);
+            abuf_append(ab, E.row[file_row].chars, len);
         }
 
         abuf_append(ab, "\x1b[K", 3);
@@ -287,6 +299,8 @@ void editor_draw_rows(struct abuf *ab) {
 }
 
 void editor_refresh_screen(void) {
+    editor_scroll();
+
     struct abuf ab = ABUF_INIT;
 
     abuf_append(&ab, "\x1b[?25l", 6);
@@ -322,7 +336,7 @@ void editor_move_cursor(int key) {
             }
             break;
         case ARROW_DOWN:
-            if (E.cursor_y != E.screen_rows - 1) {
+            if (E.cursor_y != E.num_rows) {
                 E.cursor_y++;
             }
             break;
@@ -366,6 +380,7 @@ void editor_process_keypress(void) {
 void init_editor(void) {
     E.cursor_x = 0;
     E.cursor_y = 0;
+    E.row_offset = 0;
     E.num_rows = 0;
     E.row = NULL;
     if (get_window_size(&E.screen_rows, &E.screen_cols) == -1) {
