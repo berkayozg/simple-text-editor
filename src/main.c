@@ -1,3 +1,8 @@
+/*** defines ***/
+#define _DEFAULT_SOURCE
+#define _BSD_SOURCE
+#define _GNU_SOURCE
+
 /*** includes ***/
 #include <ctype.h>
 #include <errno.h>
@@ -8,11 +13,6 @@
 #include <sys/types.h>
 #include <termios.h>
 #include <unistd.h>
-
-/*** defines ***/
-#define _DEFAULT_SOURCE
-#define _BSD_SOURCE
-#define _GNU_SOURCE
 
 #define EDITOR_VERSION "0.0.1"
 #define CTRL_KEY(k) ((k) & 0x1f)
@@ -298,7 +298,7 @@ void editor_draw_rows(struct abuf *ab) {
             if (len > E.screen_cols) {
                 len = E.screen_cols;
             }
-            abuf_append(ab, E.row[file_row].chars[E.col_offset], len);
+            abuf_append(ab, &E.row[file_row].chars[E.col_offset], len);
         }
 
         abuf_append(ab, "\x1b[K", 3);
@@ -318,7 +318,7 @@ void editor_refresh_screen(void) {
     editor_draw_rows(&ab);
 
     char buf[32];
-    snprintf(buf, sizeof(buf), "\x1b[%d;%dH", (E.cursor_y - E.row_offset) + 1, E.cursor_x + 1);
+    snprintf(buf, sizeof(buf), "\x1b[%d;%dH", (E.cursor_y - E.row_offset) + 1, (E.cursor_x - E.col_offset) + 1);
     abuf_append(&ab, buf, strlen(buf));
 
     abuf_append(&ab, "\x1b[?25h", 6);
@@ -336,9 +336,7 @@ void editor_move_cursor(int key) {
             }
             break;
         case ARROW_RIGHT:
-            if (E.cursor_x != E.screen_cols - 1) {
-                E.cursor_x++;
-            }
+            E.cursor_x++;
             break;
         case ARROW_UP:
             if (E.cursor_y != 0) {
