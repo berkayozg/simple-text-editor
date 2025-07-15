@@ -42,6 +42,7 @@ typedef struct e_row {
 
 struct editorConfig {
     int cursor_x, cursor_y;
+    int row_x;
     int row_offset;
     int col_offset;
     int screen_rows;
@@ -235,6 +236,18 @@ void editor_update_row(e_row *row) {
 }
 
 /*** row operations  ***/
+
+int editor_row_cursorx_to_rowx(e_row *row, int cx) {
+    int rx = 0;
+    for (int i = 0; i < cx; i++) {
+        if (row->chars[i] == '\t') {
+            rx += (EDITOR_TAB_STOP - 1) - (rx % EDITOR_TAB_STOP);
+        }
+        rx++;
+    }
+    return rx;
+}
+
 void editor_append_row(char *s, size_t len) {
     E.row = realloc(E.row, sizeof(e_row) * (E.num_rows + 1));
 
@@ -292,17 +305,19 @@ void abuf_free(struct abuf *ab) {
 /*** output ***/
 
 void editor_scroll(void) {
-    if (E.cursor_y < E.row_offset) {
-        E.row_offset = E.cursor_y;
+    E.row_x = 0;
+
+    if (E.cursor_y < E.num_rows) {
+        E.row_x = editor_row_cursorx_to_rowx(&E.row[E.cursor_y], E.cursor_x);
     }
     if (E.cursor_y >= E.row_offset + E.screen_rows) {
         E.row_offset = E.cursor_y - E.screen_rows + 1;
     }
-    if (E.cursor_x < E.col_offset) {
-        E.col_offset = E.cursor_x;
+    if (E.row_x < E.col_offset) {
+        E.col_offset = E.row_x;
     }
-    if (E.cursor_x >= E.col_offset + E.screen_cols) {
-        E.row_offset = E.cursor_x - E.screen_cols + 1;
+    if (E.row_x >= E.col_offset + E.screen_cols) {
+        E.row_offset = E.row_x - E.screen_cols + 1;
     }
 }
 
@@ -359,7 +374,7 @@ void editor_refresh_screen(void) {
 
     char buf[32];
     snprintf(buf, sizeof(buf), "\x1b[%d;%dH", (E.cursor_y - E.row_offset) + 1,
-             (E.cursor_x - E.col_offset) + 1);
+             (E.row_x - E.col_offset) + 1);
     abuf_append(&ab, buf, strlen(buf));
 
     abuf_append(&ab, "\x1b[?25h", 6);
@@ -444,6 +459,7 @@ void editor_process_keypress(void) {
 void init_editor(void) {
     E.cursor_x = 0;
     E.cursor_y = 0;
+    E.row_x = 0;
     E.row_offset = 0;
     E.col_offset = 0;
     E.num_rows = 0;
