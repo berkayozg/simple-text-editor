@@ -49,6 +49,7 @@ struct editorConfig {
     int screen_cols;
     int num_rows;
     e_row *row;
+    char *file_name;
     struct termios orig_termios;
 };
 
@@ -266,6 +267,9 @@ void editor_append_row(char *s, size_t len) {
 
 /*** file i/o ***/
 void editor_open(char *file_name) {
+    free(E.file_name);
+    E.file_name = strdup(file_name);
+
     FILE *fp = fopen(file_name, "r");
     if (!fp) {
         die("fopen");
@@ -357,10 +361,31 @@ void editor_draw_rows(struct abuf *ab) {
         }
 
         abuf_append(ab, "\x1b[K", 3);
-        if (i < E.screen_rows - 1) {
-            abuf_append(ab, "\r\n", 2);
+        abuf_append(ab, "\r\n", 2);
+    }
+}
+
+void editor_draw_status_bar(struct abuf *ab) {
+    abuf_append(ab, "\x1b[7m", 4);
+    char status[80], rstatus[80];
+    int len = snprintf(status, sizeof(status), "%.20s - %d lines",
+                       E.file_name ? E.file_name : "[No Name]", E.num_rows);
+    int rlen =
+        snprintf(rstatus, sizeof(rstatus), "%d/%d", E.cursor_y + 1, E.num_rows);
+    if (len > E.screen_cols) {
+        len = E.screen_cols;
+    }
+    abuf_append(ab, status, len);
+    while (len < E.screen_cols) {
+        if (E.screen_cols - len == rlen) {
+            abuf_append(ab, rstatus, rlen);
+            break;
+        } else {
+            abuf_append(ab, " ", 1);
+            len++;
         }
     }
+    abuf_append(ab, "\x1b[m", 3);
 }
 
 void editor_refresh_screen(void) {
@@ -370,7 +395,9 @@ void editor_refresh_screen(void) {
 
     abuf_append(&ab, "\x1b[?25l", 6);
     abuf_append(&ab, "\x1b[H", 3);
+
     editor_draw_rows(&ab);
+    editor_draw_status_bar(&ab);
 
     char buf[32];
     snprintf(buf, sizeof(buf), "\x1b[%d;%dH", (E.cursor_y - E.row_offset) + 1,
@@ -436,11 +463,22 @@ void editor_process_keypress(void) {
         break;
 
     case END_KEY:
-        E.cursor_x = E.screen_cols - 1;
+        if (E.cursor_y < E.num_rows) {
+            E.cursor_x = E.row[E.cursor_y].size;
+        }
         break;
 
     case PAGE_UP:
     case PAGE_DOWN: {
+        if (c == PAGE_UP) {
+            E.cursor_y = E.row_offset;
+        } else if (c == PAGE_DOWN) {
+            E.cursor_y = E.row_offset + E.screen_rows - 1;
+            if (E.cursor_y > E.num_rows) {
+                E.cursor_y = E.num_rows;
+            }
+        }
+
         int times = E.screen_rows;
         while (times--) {
             editor_move_cursor(c == PAGE_UP ? ARROW_UP : ARROW_DOWN);
@@ -464,10 +502,13 @@ void init_editor(void) {
     E.col_offset = 0;
     E.num_rows = 0;
     E.row = NULL;
+    E.file_name = NULL;
     if (get_window_size(&E.screen_rows, &E.screen_cols) == -1) {
         die("init");
     }
+    E.screen_rows -= 1;
 }
+
 int main(int argc, char *argv[]) {
     enable_raw_mode();
     init_editor();
