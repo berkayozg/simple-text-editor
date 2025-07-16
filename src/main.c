@@ -22,6 +22,7 @@
 #define ABUF_INIT {NULL, 0}
 
 enum EditorKey {
+    BACKSPACE = 127,
     ARROW_LEFT = 1000,
     ARROW_RIGHT,
     ARROW_UP,
@@ -269,6 +270,28 @@ void editor_append_row(char *s, size_t len) {
     E.num_rows++;
 }
 
+void editor_row_insert_char(e_row *row, int at, int c) {
+    if (at < 0 || at > row->size) {
+        at = row->size;
+    }
+    row->chars = realloc(row->chars, row->size + 2);
+    memmove(&row->chars[at + 1], &row->chars[at], row->size - at + 1);
+    row->size++;
+    row->chars[at] = c;
+    editor_update_row(row);
+}
+
+/*** editor operations ***/
+
+void editor_insert_char(int c) {
+    if (E.cursor_y == E.num_rows) {
+        editor_append_row("", 0);
+    }
+
+    editor_row_insert_char(&E.row[E.cursor_y], E.cursor_x, c);
+    E.cursor_x++;
+}
+
 /*** file i/o ***/
 void editor_open(char *file_name) {
     free(E.file_name);
@@ -405,7 +428,6 @@ void editor_draw_message_bar(struct abuf *ab) {
     }
 }
 
-
 void editor_refresh_screen(void) {
     editor_scroll();
 
@@ -480,6 +502,10 @@ void editor_process_keypress(void) {
     int c = editor_read_key();
 
     switch (c) {
+    case '\r':
+        /* TODO */
+        break;
+
     case CTRL_KEY('d'):
         write(STDOUT_FILENO, "\x1b[2J", 4);
         write(STDOUT_FILENO, "\x1b[H", 3);
@@ -493,6 +519,12 @@ void editor_process_keypress(void) {
         if (E.cursor_y < E.num_rows) {
             E.cursor_x = E.row[E.cursor_y].size;
         }
+        break;
+
+    case BACKSPACE:
+    case CTRL_KEY('h'):
+    case DEL_KEY:
+        /* TODO */
         break;
 
     case PAGE_UP:
@@ -516,6 +548,14 @@ void editor_process_keypress(void) {
     case ARROW_LEFT:
     case ARROW_RIGHT:
         editor_move_cursor(c);
+        break;
+
+    case CTRL_KEY('l'):
+    case '\x1b':
+        break;
+
+    default:
+        editor_insert_char(c);
         break;
     }
 }
