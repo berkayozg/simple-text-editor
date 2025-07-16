@@ -6,6 +6,7 @@
 /*** includes ***/
 #include <ctype.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -293,6 +294,28 @@ void editor_insert_char(int c) {
 }
 
 /*** file i/o ***/
+
+char *editor_rows_to_string(int *buffer_length) {
+    int total_length = 0;
+    for (int i = 0; i < E.num_rows; i++) {
+        total_length += E.row[i].size + 1;
+    }
+
+    *buffer_length = total_length;
+
+    char *buf = malloc(total_length);
+    char *p = buf;
+
+    for (int i = 0; i < E.num_rows; i++) {
+        memcpy(p, E.row[i].chars, E.row[i].size);
+        p += E.row[i].size;
+        *p = '\n';
+        p++;
+    }
+
+    return buf;
+}
+
 void editor_open(char *file_name) {
     free(E.file_name);
     E.file_name = strdup(file_name);
@@ -314,6 +337,21 @@ void editor_open(char *file_name) {
     }
     free(line);
     fclose(fp);
+}
+
+void editor_save() {
+    if (E.file_name == NULL) {
+        return;
+    }
+
+    int len;
+    char *buf = editor_rows_to_string(&len);
+
+    int fd = open(E.file_name, O_RDWR | O_CREAT, 0644);
+    ftruncate(fd, len);
+    write(fd, buf, len);
+    close(fd);
+    free(buf);
 }
 
 /*** append buffer ***/
