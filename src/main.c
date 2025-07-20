@@ -126,44 +126,44 @@ int editor_read_key(void) {
                 }
                 if (seq[2] == '~') {
                     switch (seq[1]) {
-                    case '1':
-                        return HOME_KEY;
-                    case '3':
-                        return DEL_KEY;
-                    case '4':
-                        return END_KEY;
-                    case '5':
-                        return PAGE_UP;
-                    case '6':
-                        return PAGE_DOWN;
-                    case '7':
-                        return HOME_KEY;
-                    case '8':
-                        return END_KEY;
+                        case '1':
+                            return HOME_KEY;
+                        case '3':
+                            return DEL_KEY;
+                        case '4':
+                            return END_KEY;
+                        case '5':
+                            return PAGE_UP;
+                        case '6':
+                            return PAGE_DOWN;
+                        case '7':
+                            return HOME_KEY;
+                        case '8':
+                            return END_KEY;
                     }
                 }
             } else {
                 switch (seq[1]) {
-                case 'A':
-                    return ARROW_UP;
-                case 'B':
-                    return ARROW_DOWN;
-                case 'C':
-                    return ARROW_RIGHT;
-                case 'D':
-                    return ARROW_LEFT;
-                case 'H':
-                    return HOME_KEY;
-                case 'F':
-                    return END_KEY;
+                    case 'A':
+                        return ARROW_UP;
+                    case 'B':
+                        return ARROW_DOWN;
+                    case 'C':
+                        return ARROW_RIGHT;
+                    case 'D':
+                        return ARROW_LEFT;
+                    case 'H':
+                        return HOME_KEY;
+                    case 'F':
+                        return END_KEY;
                 }
             }
         } else if (seq[0] == '0') {
             switch (seq[1]) {
-            case 'H':
-                return HOME_KEY;
-            case 'F':
-                return END_KEY;
+                case 'H':
+                    return HOME_KEY;
+                case 'F':
+                    return END_KEY;
             }
         }
         return '\x1b';
@@ -348,10 +348,19 @@ void editor_save() {
     char *buf = editor_rows_to_string(&len);
 
     int fd = open(E.file_name, O_RDWR | O_CREAT, 0644);
-    ftruncate(fd, len);
-    write(fd, buf, len);
-    close(fd);
+    if (fd != -1) {
+        if (ftruncate(fd, len) != -1) {
+            if (write(fd, buf, len) == len) {
+                close(fd);
+                free(buf);
+                editor_set_status_message("%d bytes written on disk.", len);
+                return;
+            }
+        }
+        close(fd);
+    }
     free(buf);
+    editor_set_status_message("Can't save! I/O error: %s.", strerror(errno));
 }
 
 /*** append buffer ***/
@@ -501,32 +510,32 @@ void editor_set_status_message(const char *fmt, ...) {
 void editor_move_cursor(int key) {
     e_row *row = (E.cursor_y >= E.num_rows) ? NULL : &E.row[E.cursor_y];
     switch (key) {
-    case ARROW_LEFT:
-        if (E.cursor_x != 0) {
-            E.cursor_x--;
-        } else if (E.cursor_y > 0) {
-            E.cursor_y--;
-            E.cursor_x = E.row[E.cursor_y].size;
-        }
-        break;
-    case ARROW_RIGHT:
-        if (row && E.cursor_x < row->size) {
-            E.cursor_x++;
-        } else if (row && E.cursor_x == row->size) {
-            E.cursor_y++;
-            E.cursor_x = 0;
-        }
-        break;
-    case ARROW_UP:
-        if (E.cursor_y != 0) {
-            E.cursor_y--;
-        }
-        break;
-    case ARROW_DOWN:
-        if (E.cursor_y != E.num_rows) {
-            E.cursor_y++;
-        }
-        break;
+        case ARROW_LEFT:
+            if (E.cursor_x != 0) {
+                E.cursor_x--;
+            } else if (E.cursor_y > 0) {
+                E.cursor_y--;
+                E.cursor_x = E.row[E.cursor_y].size;
+            }
+            break;
+        case ARROW_RIGHT:
+            if (row && E.cursor_x < row->size) {
+                E.cursor_x++;
+            } else if (row && E.cursor_x == row->size) {
+                E.cursor_y++;
+                E.cursor_x = 0;
+            }
+            break;
+        case ARROW_UP:
+            if (E.cursor_y != 0) {
+                E.cursor_y--;
+            }
+            break;
+        case ARROW_DOWN:
+            if (E.cursor_y != E.num_rows) {
+                E.cursor_y++;
+            }
+            break;
     }
 
     row = (E.cursor_y >= E.num_rows) ? NULL : &E.row[E.cursor_y];
@@ -540,61 +549,66 @@ void editor_process_keypress(void) {
     int c = editor_read_key();
 
     switch (c) {
-    case '\r':
-        /* TODO */
-        break;
+        case '\r':
+            /* TODO */
+            break;
 
-    case CTRL_KEY('d'):
-        write(STDOUT_FILENO, "\x1b[2J", 4);
-        write(STDOUT_FILENO, "\x1b[H", 3);
-        exit(0);
-        break;
-    case HOME_KEY:
-        E.cursor_x = 0;
-        break;
+        case CTRL_KEY('d'):
+            write(STDOUT_FILENO, "\x1b[2J", 4);
+            write(STDOUT_FILENO, "\x1b[H", 3);
+            exit(0);
+            break;
 
-    case END_KEY:
-        if (E.cursor_y < E.num_rows) {
-            E.cursor_x = E.row[E.cursor_y].size;
-        }
-        break;
+        case CTRL_KEY('s'):
+            editor_save();
+            break;
 
-    case BACKSPACE:
-    case CTRL_KEY('h'):
-    case DEL_KEY:
-        /* TODO */
-        break;
+        case HOME_KEY:
+            E.cursor_x = 0;
+            break;
 
-    case PAGE_UP:
-    case PAGE_DOWN: {
-        if (c == PAGE_UP) {
-            E.cursor_y = E.row_offset;
-        } else if (c == PAGE_DOWN) {
-            E.cursor_y = E.row_offset + E.screen_rows - 1;
-            if (E.cursor_y > E.num_rows) {
-                E.cursor_y = E.num_rows;
+        case END_KEY:
+            if (E.cursor_y < E.num_rows) {
+                E.cursor_x = E.row[E.cursor_y].size;
             }
-        }
+            break;
 
-        int times = E.screen_rows;
-        while (times--) {
-            editor_move_cursor(c == PAGE_UP ? ARROW_UP : ARROW_DOWN);
-        }
-    } break;
-    case ARROW_UP:
-    case ARROW_DOWN:
-    case ARROW_LEFT:
-    case ARROW_RIGHT:
-        editor_move_cursor(c);
-        break;
+        case BACKSPACE:
+        case CTRL_KEY('h'):
+        case DEL_KEY:
+            /* TODO */
+            break;
 
-    case CTRL_KEY('l'):
-    case '\x1b':
-        break;
+        case PAGE_UP:
+        case PAGE_DOWN: {
+            if (c == PAGE_UP) {
+                E.cursor_y = E.row_offset;
+            } else if (c == PAGE_DOWN) {
+                E.cursor_y = E.row_offset + E.screen_rows - 1;
+                if (E.cursor_y > E.num_rows) {
+                    E.cursor_y = E.num_rows;
+                }
+            }
 
-    default:
-        editor_insert_char(c);
-        break;
+            int times = E.screen_rows;
+            while (times--) {
+                editor_move_cursor(c == PAGE_UP ? ARROW_UP : ARROW_DOWN);
+            }
+        } break;
+        case ARROW_UP:
+        case ARROW_DOWN:
+        case ARROW_LEFT:
+        case ARROW_RIGHT:
+            editor_move_cursor(c);
+            break;
+
+        case CTRL_KEY('l'):
+        case '\x1b':
+            break;
+
+        default:
+            editor_insert_char(c);
+            break;
     }
 }
 
@@ -623,7 +637,7 @@ int main(int argc, char *argv[]) {
         editor_open(argv[1]);
     }
 
-    editor_set_status_message("HELP: Ctrl-D = quit");
+    editor_set_status_message("HELP: Ctrl-S = save | Ctrl-D = quit");
 
     while (1) {
         editor_refresh_screen();
