@@ -53,6 +53,7 @@ struct editorConfig {
     int screen_cols;
     int num_rows;
     e_row *row;
+    int dirty;
     char *file_name;
     char status_msg[80];
     time_t status_msg_time;
@@ -65,6 +66,9 @@ struct abuf {
 };
 
 struct editorConfig E;
+
+/*** prototypes ***/
+void editor_set_status_message(const char *fmt, ...);
 
 /*** terminal ***/
 void die(const char *s) {
@@ -269,6 +273,7 @@ void editor_append_row(char *s, size_t len) {
     editor_update_row(&E.row[at]);
 
     E.num_rows++;
+    E.dirty++;
 }
 
 void editor_row_insert_char(e_row *row, int at, int c) {
@@ -280,6 +285,7 @@ void editor_row_insert_char(e_row *row, int at, int c) {
     row->size++;
     row->chars[at] = c;
     editor_update_row(row);
+    E.dirty++;
 }
 
 /*** editor operations ***/
@@ -337,9 +343,10 @@ void editor_open(char *file_name) {
     }
     free(line);
     fclose(fp);
+    E.dirty = 0;
 }
 
-void editor_save() {
+void editor_save(void) {
     if (E.file_name == NULL) {
         return;
     }
@@ -353,6 +360,7 @@ void editor_save() {
             if (write(fd, buf, len) == len) {
                 close(fd);
                 free(buf);
+                E.dirty = 0;
                 editor_set_status_message("%d bytes written on disk.", len);
                 return;
             }
@@ -442,8 +450,9 @@ void editor_draw_rows(struct abuf *ab) {
 void editor_draw_status_bar(struct abuf *ab) {
     abuf_append(ab, "\x1b[7m", 4);
     char status[80], rstatus[80];
-    int len = snprintf(status, sizeof(status), "%.20s - %d lines",
-                       E.file_name ? E.file_name : "[No Name]", E.num_rows);
+    int len = snprintf(status, sizeof(status), "%.20s - %d lines %s",
+                       E.file_name ? E.file_name : "[No Name]", E.num_rows,
+                       E.dirty ? "(modified)" : "");
     int rlen =
         snprintf(rstatus, sizeof(rstatus), "%d/%d", E.cursor_y + 1, E.num_rows);
     if (len > E.screen_cols) {
@@ -621,6 +630,7 @@ void init_editor(void) {
     E.col_offset = 0;
     E.num_rows = 0;
     E.row = NULL;
+    E.dirty = 0;
     E.file_name = NULL;
     E.status_msg[0] = '\0';
     E.status_msg_time = 0;
