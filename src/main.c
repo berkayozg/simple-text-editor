@@ -19,6 +19,7 @@
 
 #define EDITOR_VERSION "0.0.1"
 #define EDITOR_TAB_STOP 8
+#define EDITOR_QUIT_TIMES 3
 #define CTRL_KEY(k) ((k) & 0x1f)
 #define ABUF_INIT {NULL, 0}
 
@@ -130,44 +131,44 @@ int editor_read_key(void) {
                 }
                 if (seq[2] == '~') {
                     switch (seq[1]) {
-                        case '1':
-                            return HOME_KEY;
-                        case '3':
-                            return DEL_KEY;
-                        case '4':
-                            return END_KEY;
-                        case '5':
-                            return PAGE_UP;
-                        case '6':
-                            return PAGE_DOWN;
-                        case '7':
-                            return HOME_KEY;
-                        case '8':
-                            return END_KEY;
+                    case '1':
+                        return HOME_KEY;
+                    case '3':
+                        return DEL_KEY;
+                    case '4':
+                        return END_KEY;
+                    case '5':
+                        return PAGE_UP;
+                    case '6':
+                        return PAGE_DOWN;
+                    case '7':
+                        return HOME_KEY;
+                    case '8':
+                        return END_KEY;
                     }
                 }
             } else {
                 switch (seq[1]) {
-                    case 'A':
-                        return ARROW_UP;
-                    case 'B':
-                        return ARROW_DOWN;
-                    case 'C':
-                        return ARROW_RIGHT;
-                    case 'D':
-                        return ARROW_LEFT;
-                    case 'H':
-                        return HOME_KEY;
-                    case 'F':
-                        return END_KEY;
-                }
-            }
-        } else if (seq[0] == '0') {
-            switch (seq[1]) {
+                case 'A':
+                    return ARROW_UP;
+                case 'B':
+                    return ARROW_DOWN;
+                case 'C':
+                    return ARROW_RIGHT;
+                case 'D':
+                    return ARROW_LEFT;
                 case 'H':
                     return HOME_KEY;
                 case 'F':
                     return END_KEY;
+                }
+            }
+        } else if (seq[0] == '0') {
+            switch (seq[1]) {
+            case 'H':
+                return HOME_KEY;
+            case 'F':
+                return END_KEY;
             }
         }
         return '\x1b';
@@ -276,6 +277,21 @@ void editor_append_row(char *s, size_t len) {
     E.dirty++;
 }
 
+void editor_free_row(e_row *row) {
+    free(row->render);
+    free(row->chars);
+}
+
+void editor_delete_row(int at) {
+    if (at < 0 || at >= E.num_rows) {
+        return;
+    }
+    editor_free_row(&E.row[at]);
+    memmove(&E.row[at], &E.row[at + 1], sizeof(e_row) * (E.num_rows - at - 1));
+    E.num_rows--;
+    E.dirty++;
+}
+
 void editor_row_insert_char(e_row *row, int at, int c) {
     if (at < 0 || at > row->size) {
         at = row->size;
@@ -284,6 +300,26 @@ void editor_row_insert_char(e_row *row, int at, int c) {
     memmove(&row->chars[at + 1], &row->chars[at], row->size - at + 1);
     row->size++;
     row->chars[at] = c;
+    editor_update_row(row);
+    E.dirty++;
+}
+
+void editor_row_append_string(e_row *row, char *s, size_t len) {
+    row->chars = realloc(row->chars, row->size + len + 1);
+    mempcpy(&row->chars[row->size], s, len);
+    row->size += len;
+    row->chars[row->size] = '\0';
+    editor_update_row(row);
+    E.dirty++;
+}
+
+void editor_row_delete_char(e_row *row, int at) {
+    if (at < 0 || at >= row->size) {
+        return;
+    }
+
+    memmove(&row->chars[at], &row->chars[at + 1], row->size - at);
+    row->size--;
     editor_update_row(row);
     E.dirty++;
 }
@@ -297,6 +333,27 @@ void editor_insert_char(int c) {
 
     editor_row_insert_char(&E.row[E.cursor_y], E.cursor_x, c);
     E.cursor_x++;
+}
+
+void editor_delete_char(void) {
+    if (E.cursor_y == E.num_rows) {
+        return;
+    }
+
+    if (E.cursor_x == 0 && E.cursor_y == 0) {
+        return;
+    }
+
+    e_row *row = &E.row[E.cursor_y];
+    if (E.cursor_x > 0) {
+        editor_row_delete_char(row, E.cursor_x - 1);
+        E.cursor_x--;
+    } else {
+        E.cursor_x = E.row[E.cursor_y - 1].size;
+        editor_row_append_string(&E.row[E.cursor_y - 1], row->chars, row->size);
+        editor_delete_row(E.cursor_y);
+        E.cursor_y--;
+    }
 }
 
 /*** file i/o ***/
@@ -519,32 +576,32 @@ void editor_set_status_message(const char *fmt, ...) {
 void editor_move_cursor(int key) {
     e_row *row = (E.cursor_y >= E.num_rows) ? NULL : &E.row[E.cursor_y];
     switch (key) {
-        case ARROW_LEFT:
-            if (E.cursor_x != 0) {
-                E.cursor_x--;
-            } else if (E.cursor_y > 0) {
-                E.cursor_y--;
-                E.cursor_x = E.row[E.cursor_y].size;
-            }
-            break;
-        case ARROW_RIGHT:
-            if (row && E.cursor_x < row->size) {
-                E.cursor_x++;
-            } else if (row && E.cursor_x == row->size) {
-                E.cursor_y++;
-                E.cursor_x = 0;
-            }
-            break;
-        case ARROW_UP:
-            if (E.cursor_y != 0) {
-                E.cursor_y--;
-            }
-            break;
-        case ARROW_DOWN:
-            if (E.cursor_y != E.num_rows) {
-                E.cursor_y++;
-            }
-            break;
+    case ARROW_LEFT:
+        if (E.cursor_x != 0) {
+            E.cursor_x--;
+        } else if (E.cursor_y > 0) {
+            E.cursor_y--;
+            E.cursor_x = E.row[E.cursor_y].size;
+        }
+        break;
+    case ARROW_RIGHT:
+        if (row && E.cursor_x < row->size) {
+            E.cursor_x++;
+        } else if (row && E.cursor_x == row->size) {
+            E.cursor_y++;
+            E.cursor_x = 0;
+        }
+        break;
+    case ARROW_UP:
+        if (E.cursor_y != 0) {
+            E.cursor_y--;
+        }
+        break;
+    case ARROW_DOWN:
+        if (E.cursor_y != E.num_rows) {
+            E.cursor_y++;
+        }
+        break;
     }
 
     row = (E.cursor_y >= E.num_rows) ? NULL : &E.row[E.cursor_y];
@@ -555,70 +612,84 @@ void editor_move_cursor(int key) {
 }
 
 void editor_process_keypress(void) {
+    static int quit_times = EDITOR_QUIT_TIMES;
     int c = editor_read_key();
 
     switch (c) {
-        case '\r':
-            /* TODO */
-            break;
+    case '\r':
+        /* TODO */
+        break;
 
-        case CTRL_KEY('d'):
-            write(STDOUT_FILENO, "\x1b[2J", 4);
-            write(STDOUT_FILENO, "\x1b[H", 3);
-            exit(0);
-            break;
+    case CTRL_KEY('d'):
+        if (E.dirty && quit_times > 0) {
+            editor_set_status_message("Warning! File has unsaved changes. "
+                                      "Press Ctrl+D %d more times to quit.",
+                                      quit_times);
+            quit_times--;
+            return;
+        }
+        write(STDOUT_FILENO, "\x1b[2J", 4);
+        write(STDOUT_FILENO, "\x1b[H", 3);
+        exit(0);
+        break;
 
-        case CTRL_KEY('s'):
-            editor_save();
-            break;
+    case CTRL_KEY('s'):
+        editor_save();
+        break;
 
-        case HOME_KEY:
-            E.cursor_x = 0;
-            break;
+    case HOME_KEY:
+        E.cursor_x = 0;
+        break;
 
-        case END_KEY:
-            if (E.cursor_y < E.num_rows) {
-                E.cursor_x = E.row[E.cursor_y].size;
+    case END_KEY:
+        if (E.cursor_y < E.num_rows) {
+            E.cursor_x = E.row[E.cursor_y].size;
+        }
+        break;
+
+    case BACKSPACE:
+    case CTRL_KEY('h'):
+    case DEL_KEY:
+        if (c == DEL_KEY) {
+            editor_move_cursor(ARROW_RIGHT);
+        }
+
+        editor_delete_char();
+        break;
+
+    case PAGE_UP:
+    case PAGE_DOWN: {
+        if (c == PAGE_UP) {
+            E.cursor_y = E.row_offset;
+        } else if (c == PAGE_DOWN) {
+            E.cursor_y = E.row_offset + E.screen_rows - 1;
+            if (E.cursor_y > E.num_rows) {
+                E.cursor_y = E.num_rows;
             }
-            break;
+        }
 
-        case BACKSPACE:
-        case CTRL_KEY('h'):
-        case DEL_KEY:
-            /* TODO */
-            break;
+        int times = E.screen_rows;
+        while (times--) {
+            editor_move_cursor(c == PAGE_UP ? ARROW_UP : ARROW_DOWN);
+        }
+    } break;
+    case ARROW_UP:
+    case ARROW_DOWN:
+    case ARROW_LEFT:
+    case ARROW_RIGHT:
+        editor_move_cursor(c);
+        break;
 
-        case PAGE_UP:
-        case PAGE_DOWN: {
-            if (c == PAGE_UP) {
-                E.cursor_y = E.row_offset;
-            } else if (c == PAGE_DOWN) {
-                E.cursor_y = E.row_offset + E.screen_rows - 1;
-                if (E.cursor_y > E.num_rows) {
-                    E.cursor_y = E.num_rows;
-                }
-            }
+    case CTRL_KEY('l'):
+    case '\x1b':
+        break;
 
-            int times = E.screen_rows;
-            while (times--) {
-                editor_move_cursor(c == PAGE_UP ? ARROW_UP : ARROW_DOWN);
-            }
-        } break;
-        case ARROW_UP:
-        case ARROW_DOWN:
-        case ARROW_LEFT:
-        case ARROW_RIGHT:
-            editor_move_cursor(c);
-            break;
-
-        case CTRL_KEY('l'):
-        case '\x1b':
-            break;
-
-        default:
-            editor_insert_char(c);
-            break;
+    default:
+        editor_insert_char(c);
+        break;
     }
+
+    quit_times = EDITOR_QUIT_TIMES;
 }
 
 /*** init ***/
