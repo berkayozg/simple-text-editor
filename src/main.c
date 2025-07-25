@@ -344,7 +344,8 @@ void editor_insert_new_line(void) {
         editor_insert_row(E.cursor_y, "", 0);
     } else {
         e_row *row = &E.row[E.cursor_y];
-        editor_insert_row(E.cursor_y + 1, &row->chars[E.cursor_x], row->size - E.cursor_x);
+        editor_insert_row(E.cursor_y + 1, &row->chars[E.cursor_x],
+                          row->size - E.cursor_x);
         row = &E.row[E.cursor_y];
         row->size = E.cursor_x;
         row->chars[row->size] = '\0';
@@ -353,7 +354,6 @@ void editor_insert_new_line(void) {
     E.cursor_x = 0;
     E.cursor_y++;
 }
-
 
 void editor_delete_char(void) {
     if (E.cursor_y == E.num_rows) {
